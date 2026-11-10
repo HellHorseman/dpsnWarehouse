@@ -19,5 +19,6 @@ public class InvoiceResponse {
         private Long unitId;
         private Integer qtyPlanned;
         private Integer qtyShipped;
+        private Integer qtyReturned; // <-- Добавили это поле
     }
 }

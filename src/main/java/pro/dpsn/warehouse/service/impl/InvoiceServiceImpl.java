@@ -6,10 +6,7 @@ import org.springframework.transaction.annotation.Transactional;
 import pro.dpsn.warehouse.dto.CreateInvoiceRequest;
 import pro.dpsn.warehouse.dto.InvoiceResponse;
 import pro.dpsn.warehouse.model.*;
-import pro.dpsn.warehouse.repo.BulkStockRepository;
-import pro.dpsn.warehouse.repo.InvoiceRepository;
-import pro.dpsn.warehouse.repo.MovementRepository;
-import pro.dpsn.warehouse.repo.UnitRepository;
+import pro.dpsn.warehouse.repo.*;
 import pro.dpsn.warehouse.service.InvoiceService;
 
 import java.time.ZonedDateTime;
@@ -23,6 +20,7 @@ public class InvoiceServiceImpl implements InvoiceService {
     private final UnitRepository unitRepository;
     private final MovementRepository movementRepository;
     private final BulkStockRepository bulkStockRepository;
+    private final BoxRepository boxRepository;
 
     @Override
     @Transactional
@@ -30,12 +28,9 @@ public class InvoiceServiceImpl implements InvoiceService {
         Invoice invoice = new Invoice();
         invoice.setCustomer(request.getCustomer());
         invoice.setResponsible(request.getResponsible());
-        invoice.setStatus("draft"); // Накладная создается как черновик
+        invoice.setStatus("draft");
         invoice.setCreatedAt(ZonedDateTime.now());
         invoice.setUpdatedAt(ZonedDateTime.now());
-
-        // Пока просто сохраняем, кто создал (в shipped_by запишем позже)
-        // invoice.setShippedBy(username);
 
         for (CreateInvoiceRequest.ItemRequest itemReq : request.getItems()) {
             InvoiceItem item = new InvoiceItem();
@@ -45,7 +40,6 @@ public class InvoiceServiceImpl implements InvoiceService {
             item.setQtyPlanned(itemReq.getQtyPlanned() != null ? itemReq.getQtyPlanned() : 1);
             item.setQtyShipped(0);
             item.setQtyReturned(0);
-
             invoice.addItem(item);
         }
 
@@ -70,6 +64,7 @@ public class InvoiceServiceImpl implements InvoiceService {
             dto.setUnitId(item.getUnitId());
             dto.setQtyPlanned(item.getQtyPlanned());
             dto.setQtyShipped(item.getQtyShipped());
+            dto.setQtyReturned(item.getQtyReturned()); // Добавили для полноты
             return dto;
         }).toList());
 
@@ -86,18 +81,35 @@ public class InvoiceServiceImpl implements InvoiceService {
             throw new RuntimeException("Накладную можно отгрузить только из статуса 'draft'");
         }
 
-        // 1. Меняем статус накладной
         invoice.setStatus("shipped");
         invoice.setShippedBy(shippedBy);
         invoice.setUpdatedAt(ZonedDateTime.now());
-
-        // Снимаем блокировку (если она была)
         invoice.setLockedBy(null);
         invoice.setLockedAt(null);
 
-        // 2. Проходимся по строкам накладной
         for (InvoiceItem item : invoice.getItems()) {
-            // Если это конкретное оборудование с QR
+            // 1. Обработка ЯЩИКА (независимо от содержимого)
+            if (item.getBoxId() != null) {
+                Box box = boxRepository.findById(item.getBoxId())
+                        .orElseThrow(() -> new RuntimeException("Ящик не найден"));
+
+                if (!"on_stock".equals(box.getStatus())) {
+                    throw new RuntimeException("Ящик " + box.getCode() + " недоступен (статус: " + box.getStatus() + ")");
+                }
+
+                // Проверка лимита ячеек для сумок
+                if (box.getType() == BoxType.FIXED_BAG || box.getType() == BoxType.FIXED_BAG_OPTIONAL) {
+                    long currentCount = unitRepository.countByCurrentBoxId(box.getId());
+                    if (currentCount >= box.getMaxCells()) {
+                        throw new RuntimeException("Сумка " + box.getCode() + " заполнена (максимум " + box.getMaxCells() + " ячеек)");
+                    }
+                }
+
+                box.setStatus("in_transit");
+                boxRepository.save(box);
+            }
+
+            // 2. Обработка ОБОРУДОВАНИЯ С QR (Unit)
             if (item.getUnitId() != null) {
                 Unit unit = unitRepository.findById(item.getUnitId())
                         .orElseThrow(() -> new RuntimeException("Оборудование не найдено"));
@@ -106,13 +118,15 @@ public class InvoiceServiceImpl implements InvoiceService {
                     throw new RuntimeException("Оборудование " + unit.getSerialNumber() + " недоступно (статус: " + unit.getStatus() + ")");
                 }
 
-                // Меняем статус оборудования
                 String oldStatus = unit.getStatus();
-                unit.setStatus("client"); // Или "rented", как решите
+                unit.setStatus("client");
                 unit.setUpdatedAt(ZonedDateTime.now());
+
+                if (item.getBoxId() != null) {
+                    unit.setCurrentBoxId(item.getBoxId());
+                }
                 unitRepository.save(unit);
 
-                // Пишем в историю
                 Movement movement = new Movement();
                 movement.setUnitId(unit.getId());
                 movement.setInvoiceId(invoice.getId());
@@ -122,6 +136,7 @@ public class InvoiceServiceImpl implements InvoiceService {
                 movementRepository.save(movement);
             }
 
+            // 3. Обработка МЕЛКОГО ОБОРУДОВАНИЯ (BulkItem)
             if (item.getBulkItemId() != null) {
                 BulkStock stock = bulkStockRepository.findById(item.getBulkItemId())
                         .orElseThrow(() -> new RuntimeException("Мелкое оборудование не найдено"));
@@ -130,11 +145,9 @@ public class InvoiceServiceImpl implements InvoiceService {
                     throw new RuntimeException("Недостаточно на складе: " + stock.getQtyOnHand() + " шт.");
                 }
 
-                // Вычитаем со склада
                 stock.setQtyOnHand(stock.getQtyOnHand() - item.getQtyPlanned());
                 bulkStockRepository.save(stock);
 
-                // Пишем в историю
                 Movement movement = new Movement();
                 movement.setBulkItemId(item.getBulkItemId());
                 movement.setInvoiceId(invoice.getId());
@@ -145,7 +158,6 @@ public class InvoiceServiceImpl implements InvoiceService {
                 movementRepository.save(movement);
             }
 
-            // Помечаем, сколько отгрузили
             item.setQtyShipped(item.getQtyPlanned());
         }
 
@@ -162,30 +174,23 @@ public class InvoiceServiceImpl implements InvoiceService {
             throw new RuntimeException("Приёмка возможна только для отгруженных накладных");
         }
 
-        int totalShipped = 0;
-        int totalReturnedNow = 0;
-
         for (InvoiceItem item : invoice.getItems()) {
-            // Если это конкретное оборудование с QR
+            // 1. Обработка ОБОРУДОВАНИЯ С QR (Unit)
             if (item.getUnitId() != null) {
-                totalShipped += item.getQtyShipped();
-
-                // Если это оборудование есть в списке возвращённых
                 if (receivedUnitIds.contains(item.getUnitId())) {
-                    // Проверяем, не вернули ли его уже (защита от двойной приёмки)
                     if (item.getQtyReturned() > 0) {
-                        continue; // Уже принято ранее
+                        continue;
                     }
 
                     Unit unit = unitRepository.findById(item.getUnitId())
                             .orElseThrow(() -> new RuntimeException("Оборудование не найдено"));
 
                     String oldStatus = unit.getStatus();
-                    unit.setStatus("warehouse"); // Возвращаем на склад
+                    unit.setStatus("warehouse");
+                    unit.setCurrentBoxId(null);
                     unit.setUpdatedAt(ZonedDateTime.now());
                     unitRepository.save(unit);
 
-                    // Пишем в историю
                     Movement movement = new Movement();
                     movement.setUnitId(unit.getId());
                     movement.setInvoiceId(invoice.getId());
@@ -194,20 +199,17 @@ public class InvoiceServiceImpl implements InvoiceService {
                     movement.setComment("Возврат по накладной №" + invoice.getId());
                     movementRepository.save(movement);
 
-                    // Помечаем в накладной, что эту единицу вернули
                     item.setQtyReturned(item.getQtyShipped());
-                    totalReturnedNow += item.getQtyShipped();
                 }
             }
 
+            // 2. Обработка МЕЛКОГО ОБОРУДОВАНИЯ (BulkItem)
             if (item.getBulkItemId() != null) {
-                // Если мелкое оборудование вернули (пока считаем, что вернули всё, что отгрузили, если item попал в список или просто по факту приёмки)
-                // В реальности нужно передавать количество, но для простоты пока вернем всё
-                BulkStock stock = bulkStockRepository.findById(item.getBulkItemId())
-                        .orElseThrow(() -> new RuntimeException("Мелкое оборудование не найдено"));
-
-                int returnQty = item.getQtyShipped() - item.getQtyReturned(); // Сколько еще не вернули
+                int returnQty = item.getQtyShipped() - item.getQtyReturned();
                 if (returnQty > 0) {
+                    BulkStock stock = bulkStockRepository.findById(item.getBulkItemId())
+                            .orElseThrow(() -> new RuntimeException("Мелкое оборудование не найдено"));
+
                     stock.setQtyOnHand(stock.getQtyOnHand() + returnQty);
                     bulkStockRepository.save(stock);
 
@@ -220,14 +222,16 @@ public class InvoiceServiceImpl implements InvoiceService {
                     movement.setComment("Возврат по накладной №" + invoice.getId());
                     movementRepository.save(movement);
 
-                    item.setQtyReturned(item.getQtyShipped()); // Помечаем, что вернули всё
+                    item.setQtyReturned(item.getQtyShipped());
                 }
             }
+
+            // 3. ЯЩИК НЕ ТРОГАЕМ — он принимается отдельно через BoxService.receiveBox()
         }
 
-        // Проверяем, всё ли вернули
+        // Проверяем, всё ли вернули (только для QR-оборудования)
         boolean allReturned = invoice.getItems().stream()
-                .filter(i -> i.getUnitId() != null) // Пока считаем только QR-оборудование
+                .filter(i -> i.getUnitId() != null)
                 .allMatch(i -> i.getQtyReturned() >= i.getQtyShipped());
 
         if (allReturned) {
