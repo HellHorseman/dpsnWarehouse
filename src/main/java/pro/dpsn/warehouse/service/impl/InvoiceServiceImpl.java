@@ -5,10 +5,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pro.dpsn.warehouse.dto.CreateInvoiceRequest;
 import pro.dpsn.warehouse.dto.InvoiceResponse;
-import pro.dpsn.warehouse.model.Invoice;
-import pro.dpsn.warehouse.model.InvoiceItem;
-import pro.dpsn.warehouse.model.Movement;
-import pro.dpsn.warehouse.model.Unit;
+import pro.dpsn.warehouse.model.*;
+import pro.dpsn.warehouse.repo.BulkStockRepository;
 import pro.dpsn.warehouse.repo.InvoiceRepository;
 import pro.dpsn.warehouse.repo.MovementRepository;
 import pro.dpsn.warehouse.repo.UnitRepository;
@@ -24,6 +22,7 @@ public class InvoiceServiceImpl implements InvoiceService {
     private final InvoiceRepository invoiceRepository;
     private final UnitRepository unitRepository;
     private final MovementRepository movementRepository;
+    private final BulkStockRepository bulkStockRepository;
 
     @Override
     @Transactional
@@ -123,7 +122,28 @@ public class InvoiceServiceImpl implements InvoiceService {
                 movementRepository.save(movement);
             }
 
-            // TODO: Обработка мелкого оборудования (bulk_item) и ящиков — сделаем позже
+            if (item.getBulkItemId() != null) {
+                BulkStock stock = bulkStockRepository.findById(item.getBulkItemId())
+                        .orElseThrow(() -> new RuntimeException("Мелкое оборудование не найдено"));
+
+                if (stock.getQtyOnHand() < item.getQtyPlanned()) {
+                    throw new RuntimeException("Недостаточно на складе: " + stock.getQtyOnHand() + " шт.");
+                }
+
+                // Вычитаем со склада
+                stock.setQtyOnHand(stock.getQtyOnHand() - item.getQtyPlanned());
+                bulkStockRepository.save(stock);
+
+                // Пишем в историю
+                Movement movement = new Movement();
+                movement.setBulkItemId(item.getBulkItemId());
+                movement.setInvoiceId(invoice.getId());
+                movement.setFromStatus("warehouse");
+                movement.setToStatus("client");
+                movement.setQty(item.getQtyPlanned());
+                movement.setComment("Отгрузка по накладной №" + invoice.getId());
+                movementRepository.save(movement);
+            }
 
             // Помечаем, сколько отгрузили
             item.setQtyShipped(item.getQtyPlanned());
@@ -179,7 +199,30 @@ public class InvoiceServiceImpl implements InvoiceService {
                     totalReturnedNow += item.getQtyShipped();
                 }
             }
-            // TODO: Обработка мелкого оборудования (bulk_item) — сделаем позже
+
+            if (item.getBulkItemId() != null) {
+                // Если мелкое оборудование вернули (пока считаем, что вернули всё, что отгрузили, если item попал в список или просто по факту приёмки)
+                // В реальности нужно передавать количество, но для простоты пока вернем всё
+                BulkStock stock = bulkStockRepository.findById(item.getBulkItemId())
+                        .orElseThrow(() -> new RuntimeException("Мелкое оборудование не найдено"));
+
+                int returnQty = item.getQtyShipped() - item.getQtyReturned(); // Сколько еще не вернули
+                if (returnQty > 0) {
+                    stock.setQtyOnHand(stock.getQtyOnHand() + returnQty);
+                    bulkStockRepository.save(stock);
+
+                    Movement movement = new Movement();
+                    movement.setBulkItemId(item.getBulkItemId());
+                    movement.setInvoiceId(invoice.getId());
+                    movement.setFromStatus("client");
+                    movement.setToStatus("warehouse");
+                    movement.setQty(returnQty);
+                    movement.setComment("Возврат по накладной №" + invoice.getId());
+                    movementRepository.save(movement);
+
+                    item.setQtyReturned(item.getQtyShipped()); // Помечаем, что вернули всё
+                }
+            }
         }
 
         // Проверяем, всё ли вернули
