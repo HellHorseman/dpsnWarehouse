@@ -6,6 +6,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import pro.dpsn.warehouse.dto.CreateInvoiceRequest;
 import pro.dpsn.warehouse.dto.InvoiceResponse;
+import pro.dpsn.warehouse.dto.ReceiveInvoiceRequest;
 import pro.dpsn.warehouse.dto.ShipInvoiceRequest;
 import pro.dpsn.warehouse.model.Invoice;
 import pro.dpsn.warehouse.service.InvoiceService;
@@ -36,5 +37,13 @@ public class InvoiceController {
                             @RequestBody ShipInvoiceRequest request,
                             Authentication authentication) {
         invoiceService.shipInvoice(id, request.getShippedBy(), authentication.getName());
+    }
+
+    @PostMapping("/{id}/receive")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STOREKEEPER')")
+    public void receiveInvoice(@PathVariable Long id,
+                               @RequestBody ReceiveInvoiceRequest request,
+                               Authentication authentication) {
+        invoiceService.receiveInvoice(id, request.getUnitIds(), authentication.getName());
     }
 }
