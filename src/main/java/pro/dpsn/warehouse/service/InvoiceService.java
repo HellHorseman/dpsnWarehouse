@@ -7,4 +7,5 @@ import pro.dpsn.warehouse.model.Invoice;
 public interface InvoiceService {
     Invoice createInvoice(CreateInvoiceRequest request, String username);
     InvoiceResponse getInvoiceById(Long id);
+    void shipInvoice(Long invoiceId, String shippedBy, String username);
 }

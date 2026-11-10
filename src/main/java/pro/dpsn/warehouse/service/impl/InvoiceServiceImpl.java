@@ -7,7 +7,10 @@ import pro.dpsn.warehouse.dto.CreateInvoiceRequest;
 import pro.dpsn.warehouse.dto.InvoiceResponse;
 import pro.dpsn.warehouse.model.Invoice;
 import pro.dpsn.warehouse.model.InvoiceItem;
+import pro.dpsn.warehouse.model.Movement;
+import pro.dpsn.warehouse.model.Unit;
 import pro.dpsn.warehouse.repo.InvoiceRepository;
+import pro.dpsn.warehouse.repo.MovementRepository;
 import pro.dpsn.warehouse.repo.UnitRepository;
 import pro.dpsn.warehouse.service.InvoiceService;
 
@@ -19,6 +22,7 @@ public class InvoiceServiceImpl implements InvoiceService {
 
     private final InvoiceRepository invoiceRepository;
     private final UnitRepository unitRepository;
+    private final MovementRepository movementRepository;
 
     @Override
     @Transactional
@@ -70,5 +74,60 @@ public class InvoiceServiceImpl implements InvoiceService {
         }).toList());
 
         return resp;
+    }
+
+    @Override
+    @Transactional
+    public void shipInvoice(Long invoiceId, String shippedBy, String username) {
+        Invoice invoice = invoiceRepository.findById(invoiceId)
+                .orElseThrow(() -> new RuntimeException("Накладная не найдена"));
+
+        if (!"draft".equals(invoice.getStatus())) {
+            throw new RuntimeException("Накладную можно отгрузить только из статуса 'draft'");
+        }
+
+        // 1. Меняем статус накладной
+        invoice.setStatus("shipped");
+        invoice.setShippedBy(shippedBy);
+        invoice.setUpdatedAt(ZonedDateTime.now());
+
+        // Снимаем блокировку (если она была)
+        invoice.setLockedBy(null);
+        invoice.setLockedAt(null);
+
+        // 2. Проходимся по строкам накладной
+        for (InvoiceItem item : invoice.getItems()) {
+            // Если это конкретное оборудование с QR
+            if (item.getUnitId() != null) {
+                Unit unit = unitRepository.findById(item.getUnitId())
+                        .orElseThrow(() -> new RuntimeException("Оборудование не найдено"));
+
+                if (!"warehouse".equals(unit.getStatus())) {
+                    throw new RuntimeException("Оборудование " + unit.getSerialNumber() + " недоступно (статус: " + unit.getStatus() + ")");
+                }
+
+                // Меняем статус оборудования
+                String oldStatus = unit.getStatus();
+                unit.setStatus("client"); // Или "rented", как решите
+                unit.setUpdatedAt(ZonedDateTime.now());
+                unitRepository.save(unit);
+
+                // Пишем в историю
+                Movement movement = new Movement();
+                movement.setUnitId(unit.getId());
+                movement.setInvoiceId(invoice.getId());
+                movement.setFromStatus(oldStatus);
+                movement.setToStatus("client");
+                movement.setComment("Отгрузка по накладной №" + invoice.getId());
+                movementRepository.save(movement);
+            }
+
+            // TODO: Обработка мелкого оборудования (bulk_item) и ящиков — сделаем позже
+
+            // Помечаем, сколько отгрузили
+            item.setQtyShipped(item.getQtyPlanned());
+        }
+
+        invoiceRepository.save(invoice);
     }
 }
