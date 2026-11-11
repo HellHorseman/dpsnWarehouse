@@ -2,14 +2,13 @@ package pro.dpsn.warehouse.controller;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-import pro.dpsn.warehouse.dto.CreateInvoiceRequest;
-import pro.dpsn.warehouse.dto.InvoiceResponse;
-import pro.dpsn.warehouse.dto.ReceiveInvoiceRequest;
-import pro.dpsn.warehouse.dto.ShipInvoiceRequest;
+import org.springframework.web.multipart.MultipartFile;
+import pro.dpsn.warehouse.dto.*;
 import pro.dpsn.warehouse.model.Invoice;
 import pro.dpsn.warehouse.service.InvoiceService;
 
@@ -64,5 +63,11 @@ public class InvoiceController {
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=invoice_" + id + ".xlsx")
                 .header(HttpHeaders.CONTENT_TYPE, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                 .body(excel);
+    }
+
+    @PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STOREKEEPER')")
+    public ImportResult importInvoice(@RequestParam("file") MultipartFile file, Authentication authentication) {
+        return invoiceService.importInvoiceFromExcel(file, authentication.getName());
     }
 }

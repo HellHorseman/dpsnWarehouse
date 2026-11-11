@@ -5,7 +5,9 @@ import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 import pro.dpsn.warehouse.dto.CreateInvoiceRequest;
+import pro.dpsn.warehouse.dto.ImportResult;
 import pro.dpsn.warehouse.dto.InvoiceResponse;
 import pro.dpsn.warehouse.model.*;
 import pro.dpsn.warehouse.repo.*;
@@ -14,6 +16,7 @@ import pro.dpsn.warehouse.service.InvoiceService;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.time.ZonedDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -318,5 +321,61 @@ public class InvoiceServiceImpl implements InvoiceService {
         } catch (IOException e) {
             throw new RuntimeException("Ошибка генерации Excel: " + e.getMessage());
         }
+    }
+
+    @Override
+    @Transactional
+    public ImportResult importInvoiceFromExcel(MultipartFile file, String username) {
+        ImportResult result = new ImportResult();
+        List<CreateInvoiceRequest.ItemRequest> items = new ArrayList<>();
+
+        // Предполагаем, что в Excel есть колонки: Тип (UNIT/BULK), ID, Количество
+        try (Workbook workbook = new XSSFWorkbook(file.getInputStream())) {
+            Sheet sheet = workbook.getSheetAt(0);
+
+            // Пропускаем заголовок (строку 0)
+            for (int i = 1; i <= sheet.getLastRowNum(); i++) {
+                Row row = sheet.getRow(i);
+                if (row == null) continue;
+
+                try {
+                    String type = row.getCell(0).getStringCellValue(); // "UNIT" или "BULK"
+                    long id = (long) row.getCell(1).getNumericCellValue();
+                    int qty = (int) row.getCell(2).getNumericCellValue();
+
+                    CreateInvoiceRequest.ItemRequest item = new CreateInvoiceRequest.ItemRequest();
+                    if ("UNIT".equalsIgnoreCase(type)) {
+                        item.setUnitId(id);
+                    } else if ("BULK".equalsIgnoreCase(type)) {
+                        item.setBulkItemId(id);
+                    } else {
+                        result.getErrors().add("Строка " + (i + 1) + ": неизвестный тип " + type);
+                        continue;
+                    }
+                    item.setQtyPlanned(qty);
+                    items.add(item);
+                } catch (Exception e) {
+                    result.getErrors().add("Строка " + (i + 1) + ": ошибка парсинга (" + e.getMessage() + ")");
+                }
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("Ошибка чтения файла: " + e.getMessage());
+        }
+
+        // Создаем накладную, если есть валидные строки
+        if (!items.isEmpty()) {
+            CreateInvoiceRequest request = new CreateInvoiceRequest();
+            request.setCustomer("Загружено из Excel");
+            request.setResponsible("Система");
+            request.setItems(items);
+
+            Invoice invoice = createInvoice(request, username);
+            result.setInvoiceId(invoice.getId());
+            result.setSuccessCount(items.size());
+        } else {
+            result.getErrors().add("Не найдено ни одной валидной строки для загрузки");
+        }
+
+        return result;
     }
 }
