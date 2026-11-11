@@ -22,21 +22,6 @@ public class UnitServiceImpl implements UnitService {
     private final MovementRepository movementRepository;
 
     @Override
-    public List<UnitResponse> getAllUnits() {
-        return unitRepository.findAll().stream()
-                .map(unit -> {
-                    UnitResponse dto = new UnitResponse();
-                    dto.setId(unit.getId());
-                    dto.setSerialNumber(unit.getSerialNumber());
-                    dto.setQrCode(unit.getQrCode());
-                    dto.setStatus(unit.getStatus());
-                    dto.setModelName(unit.getModel().getName());
-                    return dto;
-                })
-                .collect(Collectors.toList());
-    }
-
-    @Override
     public List<UnitResponse> getUnitsByStatus(String status) {
         return unitRepository.findByStatus(status).stream()
                 .map(unit -> {
