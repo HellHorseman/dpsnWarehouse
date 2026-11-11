@@ -1,6 +1,8 @@
 package pro.dpsn.warehouse.controller;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -51,5 +53,16 @@ public class InvoiceController {
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STOREKEEPER')")
     public void removeItem(@PathVariable Long invoiceId, @PathVariable Long itemId) {
         invoiceService.removeItemFromInvoice(invoiceId, itemId);
+    }
+
+    @GetMapping("/{id}/export")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STOREKEEPER')")
+    public ResponseEntity<byte[]> exportInvoice(@PathVariable Long id) {
+        byte[] excel = invoiceService.exportInvoiceToExcel(id);
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=invoice_" + id + ".xlsx")
+                .header(HttpHeaders.CONTENT_TYPE, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                .body(excel);
     }
 }

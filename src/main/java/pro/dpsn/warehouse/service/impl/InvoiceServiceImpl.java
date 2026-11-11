@@ -1,6 +1,8 @@
 package pro.dpsn.warehouse.service.impl;
 
 import lombok.RequiredArgsConstructor;
+import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pro.dpsn.warehouse.dto.CreateInvoiceRequest;
@@ -9,6 +11,8 @@ import pro.dpsn.warehouse.model.*;
 import pro.dpsn.warehouse.repo.*;
 import pro.dpsn.warehouse.service.InvoiceService;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.time.ZonedDateTime;
 import java.util.List;
 
@@ -264,5 +268,55 @@ public class InvoiceServiceImpl implements InvoiceService {
 
         invoice.setUpdatedAt(ZonedDateTime.now());
         invoiceRepository.save(invoice); // orphanRemoval = true удалит строку из БД
+    }
+
+    @Override
+    public byte[] exportInvoiceToExcel(Long invoiceId) {
+        Invoice invoice = invoiceRepository.findById(invoiceId)
+                .orElseThrow(() -> new RuntimeException("Накладная не найдена"));
+
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            Sheet sheet = workbook.createSheet("Накладная " + invoice.getId());
+
+            // Стили для заголовков
+            CellStyle headerStyle = workbook.createCellStyle();
+            Font headerFont = workbook.createFont();
+            headerFont.setBold(true);
+            headerStyle.setFont(headerFont);
+
+            // Заголовки
+            Row header = sheet.createRow(0);
+            String[] columns = {"ID", "Оборудование/Мелкое", "Кол-во план", "Кол-во отгружено", "Кол-во возвращено"};
+            for (int i = 0; i < columns.length; i++) {
+                Cell cell = header.createCell(i);
+                cell.setCellValue(columns[i]);
+                cell.setCellStyle(headerStyle);
+            }
+
+            // Данные
+            int rowNum = 1;
+            for (InvoiceItem item : invoice.getItems()) {
+                Row row = sheet.createRow(rowNum++);
+                row.createCell(0).setCellValue(item.getId());
+
+                String itemName = item.getUnitId() != null ? "Unit ID: " + item.getUnitId() : "Bulk ID: " + item.getBulkItemId();
+                row.createCell(1).setCellValue(itemName);
+                row.createCell(2).setCellValue(item.getQtyPlanned());
+                row.createCell(3).setCellValue(item.getQtyShipped());
+                row.createCell(4).setCellValue(item.getQtyReturned());
+            }
+
+            // Автоширина
+            for (int i = 0; i < columns.length; i++) {
+                sheet.autoSizeColumn(i);
+            }
+
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            workbook.write(bos);
+            return bos.toByteArray();
+
+        } catch (IOException e) {
+            throw new RuntimeException("Ошибка генерации Excel: " + e.getMessage());
+        }
     }
 }

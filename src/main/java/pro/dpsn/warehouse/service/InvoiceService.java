@@ -12,4 +12,5 @@ public interface InvoiceService {
     void shipInvoice(Long invoiceId, String shippedBy, String username);
     void receiveInvoice(Long invoiceId, List<Long> receivedUnitIds, String username);
     void removeItemFromInvoice(Long invoiceId, Long itemId);
+    byte[] exportInvoiceToExcel(Long invoiceId);
 }
