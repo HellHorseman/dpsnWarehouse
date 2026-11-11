@@ -12,6 +12,8 @@ import pro.dpsn.warehouse.dto.*;
 import pro.dpsn.warehouse.model.Invoice;
 import pro.dpsn.warehouse.service.InvoiceService;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/invoices")
 @RequiredArgsConstructor
@@ -69,5 +71,11 @@ public class InvoiceController {
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STOREKEEPER')")
     public ImportResult importInvoice(@RequestParam("file") MultipartFile file, Authentication authentication) {
         return invoiceService.importInvoiceFromExcel(file, authentication.getName());
+    }
+
+    @GetMapping
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STOREKEEPER')")
+    public List<InvoiceResponse> getAllInvoices() {
+        return invoiceService.getAllInvoices();
     }
 }

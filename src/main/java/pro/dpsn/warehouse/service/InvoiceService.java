@@ -16,4 +16,5 @@ public interface InvoiceService {
     void removeItemFromInvoice(Long invoiceId, Long itemId);
     byte[] exportInvoiceToExcel(Long invoiceId);
     ImportResult importInvoiceFromExcel(MultipartFile file, String username);
+    List<InvoiceResponse> getAllInvoices();
 }

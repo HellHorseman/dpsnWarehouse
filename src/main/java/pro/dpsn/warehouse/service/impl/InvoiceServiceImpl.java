@@ -378,4 +378,11 @@ public class InvoiceServiceImpl implements InvoiceService {
 
         return result;
     }
+
+    @Override
+    public List<InvoiceResponse> getAllInvoices() {
+        return invoiceRepository.findAllByOrderByIdDesc().stream()
+                .map(invoice -> getInvoiceById(invoice.getId())) // Переиспользуем маппинг
+                .toList();
+    }
 }
