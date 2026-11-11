@@ -34,4 +34,12 @@ public class UnitController {
     public UnitResponse getUnitByQr(@PathVariable String qrCode) {
         return unitService.getUnitByQr(qrCode);
     }
+
+    @GetMapping
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STOREKEEPER')")
+    public List<UnitResponse> getUnits(
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String modelName) {
+        return unitService.getFilteredUnits(status, modelName);
+    }
 }

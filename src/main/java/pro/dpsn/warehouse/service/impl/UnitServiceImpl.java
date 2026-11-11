@@ -92,4 +92,19 @@ public class UnitServiceImpl implements UnitService {
         dto.setModelName(unit.getModel().getName());
         return dto;
     }
+
+    @Override
+    public List<UnitResponse> getFilteredUnits(String status, String modelName) {
+        return unitRepository.findWithFilters(status, modelName).stream()
+                .map(unit -> {
+                    UnitResponse dto = new UnitResponse();
+                    dto.setId(unit.getId());
+                    dto.setSerialNumber(unit.getSerialNumber());
+                    dto.setQrCode(unit.getQrCode());
+                    dto.setStatus(unit.getStatus());
+                    dto.setModelName(unit.getModel().getName());
+                    return dto;
+                })
+                .collect(Collectors.toList());
+    }
 }

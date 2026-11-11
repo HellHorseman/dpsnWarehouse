@@ -8,4 +8,5 @@ public interface UnitService {
     List<UnitResponse> getUnitsByStatus(String status);
     void updateStatus(Long unitId, String newStatus, String comment);
     UnitResponse getUnitByQr(String qrCode);
+    List<UnitResponse> getFilteredUnits(String status, String modelName);
 }
