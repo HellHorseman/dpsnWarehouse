@@ -15,6 +15,6 @@ public interface UnitRepository extends JpaRepository<Unit, Long> {
 
     @Query("SELECT u FROM Unit u WHERE " +
             "(:status IS NULL OR u.status = :status) AND " +
-            "(:modelName IS NULL OR LOWER(u.model.name) LIKE LOWER(CONCAT('%', :modelName, '%')))")
+            "(LOWER(u.model.name) LIKE LOWER(CONCAT('%', COALESCE(:modelName, ''), '%')))")
     List<Unit> findWithFilters(@Param("status") String status, @Param("modelName") String modelName);
 }
