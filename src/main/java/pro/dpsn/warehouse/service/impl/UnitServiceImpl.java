@@ -78,4 +78,18 @@ public class UnitServiceImpl implements UnitService {
         movement.setCreatedAt(ZonedDateTime.now());
         movementRepository.save(movement);
     }
+
+    @Override
+    public UnitResponse getUnitByQr(String qrCode) {
+        Unit unit = unitRepository.findByQrCode(qrCode)
+                .orElseThrow(() -> new RuntimeException("Оборудование не найдено"));
+
+        UnitResponse dto = new UnitResponse();
+        dto.setId(unit.getId());
+        dto.setSerialNumber(unit.getSerialNumber());
+        dto.setQrCode(unit.getQrCode());
+        dto.setStatus(unit.getStatus());
+        dto.setModelName(unit.getModel().getName());
+        return dto;
+    }
 }

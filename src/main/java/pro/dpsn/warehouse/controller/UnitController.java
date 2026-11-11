@@ -28,4 +28,10 @@ public class UnitController {
     public void updateStatus(@PathVariable Long id, @RequestBody StatusUpdateRequest request) {
         unitService.updateStatus(id, request.getStatus(), request.getComment());
     }
+
+    @GetMapping("/qr/{qrCode}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STOREKEEPER')")
+    public UnitResponse getUnitByQr(@PathVariable String qrCode) {
+        return unitService.getUnitByQr(qrCode);
+    }
 }
