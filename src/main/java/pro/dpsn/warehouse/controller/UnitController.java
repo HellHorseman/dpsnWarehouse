@@ -15,14 +15,6 @@ public class UnitController {
 
     private final UnitService unitService;
 
-    @GetMapping
-    public List<UnitResponse> getUnits(@RequestParam(required = false) String status) {
-        if (status != null) {
-            return unitService.getUnitsByStatus(status);
-        }
-        return unitService.getAllUnits();
-    }
-
     @PatchMapping("/{id}/status")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STOREKEEPER')")
     public void updateStatus(@PathVariable Long id, @RequestBody StatusUpdateRequest request) {
