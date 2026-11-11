@@ -243,4 +243,26 @@ public class InvoiceServiceImpl implements InvoiceService {
         invoice.setUpdatedAt(ZonedDateTime.now());
         invoiceRepository.save(invoice);
     }
+
+    @Override
+    @Transactional
+    public void removeItemFromInvoice(Long invoiceId, Long itemId) {
+        Invoice invoice = invoiceRepository.findById(invoiceId)
+                .orElseThrow(() -> new RuntimeException("Накладная не найдена"));
+
+        // Удалять можно только из черновика
+        if (!"draft".equals(invoice.getStatus())) {
+            throw new RuntimeException("Нельзя удалять позиции из отгруженной накладной");
+        }
+
+        // Ищем строку и удаляем её
+        boolean removed = invoice.getItems().removeIf(item -> item.getId().equals(itemId));
+
+        if (!removed) {
+            throw new RuntimeException("Позиция с ID " + itemId + " не найдена в накладной");
+        }
+
+        invoice.setUpdatedAt(ZonedDateTime.now());
+        invoiceRepository.save(invoice); // orphanRemoval = true удалит строку из БД
+    }
 }

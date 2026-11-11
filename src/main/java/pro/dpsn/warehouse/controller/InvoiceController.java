@@ -46,4 +46,10 @@ public class InvoiceController {
                                Authentication authentication) {
         invoiceService.receiveInvoice(id, request.getUnitIds(), authentication.getName());
     }
+
+    @DeleteMapping("/{invoiceId}/items/{itemId}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STOREKEEPER')")
+    public void removeItem(@PathVariable Long invoiceId, @PathVariable Long itemId) {
+        invoiceService.removeItemFromInvoice(invoiceId, itemId);
+    }
 }
