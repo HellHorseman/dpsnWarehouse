@@ -28,6 +28,7 @@ public class InvoiceServiceImpl implements InvoiceService {
     private final MovementRepository movementRepository;
     private final BulkStockRepository bulkStockRepository;
     private final BoxRepository boxRepository;
+    private final BulkItemRepository bulkItemRepository;
 
     @Override
     @Transactional
@@ -69,9 +70,25 @@ public class InvoiceServiceImpl implements InvoiceService {
             InvoiceResponse.ItemDto dto = new InvoiceResponse.ItemDto();
             dto.setId(item.getId());
             dto.setUnitId(item.getUnitId());
+            dto.setBulkItemId(item.getBulkItemId());
             dto.setQtyPlanned(item.getQtyPlanned());
             dto.setQtyShipped(item.getQtyShipped());
-            dto.setQtyReturned(item.getQtyReturned()); // Добавили для полноты
+            dto.setQtyReturned(item.getQtyReturned());
+
+            // Для QR-оборудования
+            if (item.getUnitId() != null) {
+                unitRepository.findById(item.getUnitId()).ifPresent(unit -> {
+                    dto.setUnitName(unit.getModel().getName() + " (" + unit.getSerialNumber() + ")");
+                });
+            }
+
+            // ДЛЯ МЕЛКОГО ОБОРУДОВАНИЯ (вот этого не хватало!)
+            if (item.getBulkItemId() != null) {
+                bulkItemRepository.findById(item.getBulkItemId()).ifPresent(bulk -> {
+                    dto.setBulkItemName(bulk.getName());
+                });
+            }
+
             return dto;
         }).toList());
 
@@ -238,7 +255,6 @@ public class InvoiceServiceImpl implements InvoiceService {
 
         // Проверяем, всё ли вернули (только для QR-оборудования)
         boolean allReturned = invoice.getItems().stream()
-                .filter(i -> i.getUnitId() != null)
                 .allMatch(i -> i.getQtyReturned() >= i.getQtyShipped());
 
         if (allReturned) {
@@ -384,5 +400,53 @@ public class InvoiceServiceImpl implements InvoiceService {
         return invoiceRepository.findAllByOrderByIdDesc().stream()
                 .map(invoice -> getInvoiceById(invoice.getId())) // Переиспользуем маппинг
                 .toList();
+    }
+
+    @Override
+    @Transactional
+    public void addItemToInvoice(Long invoiceId, CreateInvoiceRequest.ItemRequest itemReq) {
+        Invoice invoice = invoiceRepository.findById(invoiceId)
+                .orElseThrow(() -> new RuntimeException("Накладная не найдена"));
+
+        if (!"draft".equals(invoice.getStatus())) {
+            throw new RuntimeException("Редактировать можно только черновик");
+        }
+
+        InvoiceItem item = new InvoiceItem();
+        item.setUnitId(itemReq.getUnitId());
+        item.setBulkItemId(itemReq.getBulkItemId());
+        item.setBoxId(itemReq.getBoxId());
+        item.setQtyPlanned(itemReq.getQtyPlanned() != null ? itemReq.getQtyPlanned() : 1);
+        item.setQtyShipped(0);
+        item.setQtyReturned(0);
+
+        invoice.addItem(item);
+        invoice.setUpdatedAt(ZonedDateTime.now());
+        invoiceRepository.save(invoice);
+    }
+
+    @Override
+    @Transactional
+    public void updateItemQty(Long invoiceId, Long itemId, Integer qty) {
+        Invoice invoice = invoiceRepository.findById(invoiceId)
+                .orElseThrow(() -> new RuntimeException("Накладная не найдена"));
+
+        if (!"draft".equals(invoice.getStatus())) {
+            throw new RuntimeException("Редактировать можно только черновик");
+        }
+
+        InvoiceItem item = invoice.getItems().stream()
+                .filter(i -> i.getId().equals(itemId))
+                .findFirst()
+                .orElseThrow(() -> new RuntimeException("Позиция не найдена"));
+
+        // Если это серийник, количество всегда 1 (пока не поддерживаем дробление)
+        if (item.getUnitId() != null) {
+            throw new RuntimeException("Нельзя изменить количество для серийного оборудования");
+        }
+
+        item.setQtyPlanned(qty);
+        invoice.setUpdatedAt(ZonedDateTime.now());
+        invoiceRepository.save(invoice);
     }
 }

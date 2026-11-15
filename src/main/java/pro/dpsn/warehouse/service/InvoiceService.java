@@ -17,4 +17,6 @@ public interface InvoiceService {
     byte[] exportInvoiceToExcel(Long invoiceId);
     ImportResult importInvoiceFromExcel(MultipartFile file, String username);
     List<InvoiceResponse> getAllInvoices();
+    void addItemToInvoice(Long invoiceId, CreateInvoiceRequest.ItemRequest itemRequest);
+    void updateItemQty(Long invoiceId, Long itemId, Integer qty);
 }

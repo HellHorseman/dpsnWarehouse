@@ -17,6 +17,9 @@ public class InvoiceResponse {
     public static class ItemDto {
         private Long id;
         private Long unitId;
+        private String unitName;
+        private Long bulkItemId;
+        private String bulkItemName;
         private Integer qtyPlanned;
         private Integer qtyShipped;
         private Integer qtyReturned; // <-- Добавили это поле

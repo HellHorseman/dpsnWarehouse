@@ -78,4 +78,16 @@ public class InvoiceController {
     public List<InvoiceResponse> getAllInvoices() {
         return invoiceService.getAllInvoices();
     }
+
+    @PostMapping("/{id}/items")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STOREKEEPER')")
+    public void addItem(@PathVariable Long id, @RequestBody CreateInvoiceRequest.ItemRequest request) {
+        invoiceService.addItemToInvoice(id, request);
+    }
+
+    @PatchMapping("/{invoiceId}/items/{itemId}/qty")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STOREKEEPER')")
+    public void updateQty(@PathVariable Long invoiceId, @PathVariable Long itemId, @RequestParam Integer qty) {
+        invoiceService.updateItemQty(invoiceId, itemId, qty);
+    }
 }
