@@ -4,13 +4,16 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import pro.dpsn.warehouse.dto.BoxResponse;
+import pro.dpsn.warehouse.dto.CreateBoxRequest;
 import pro.dpsn.warehouse.dto.UnitResponse;
 import pro.dpsn.warehouse.model.Box;
+import pro.dpsn.warehouse.model.BoxType;
 import pro.dpsn.warehouse.model.Unit;
 import pro.dpsn.warehouse.repo.BoxRepository;
 import pro.dpsn.warehouse.repo.UnitRepository;
 import pro.dpsn.warehouse.service.BoxService;
 
+import java.time.ZonedDateTime;
 import java.util.List;
 
 @Service
@@ -75,5 +78,23 @@ public class BoxServiceImpl implements BoxService {
         }).toList());
 
         return dto;
+    }
+
+    @Override
+    public void createBox(CreateBoxRequest request) {
+        // Проверяем, нет ли уже ящика с таким кодом
+        if (boxRepository.findByCode(request.getCode()).isPresent()) {
+            throw new RuntimeException("Ящик с таким кодом уже существует");
+        }
+
+        Box box = new Box();
+        box.setCode(request.getCode());
+        box.setQrCode(request.getQrCode() != null ? request.getQrCode() : "QR-" + request.getCode());
+        box.setType(BoxType.valueOf(request.getType()));
+        box.setMaxCells(request.getMaxCells());
+        box.setStatus("on_stock");
+        box.setCreatedAt(ZonedDateTime.now());
+
+        boxRepository.save(box);
     }
 }

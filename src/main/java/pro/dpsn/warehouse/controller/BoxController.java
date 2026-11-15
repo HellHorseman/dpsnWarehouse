@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import pro.dpsn.warehouse.dto.BoxResponse;
+import pro.dpsn.warehouse.dto.CreateBoxRequest;
 import pro.dpsn.warehouse.service.BoxService;
 
 import java.util.List;
@@ -22,6 +23,7 @@ public class BoxController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STOREKEEPER')")
     public List<BoxResponse> getAllBoxes() {
         return boxService.getAllBoxes();
     }
@@ -29,5 +31,11 @@ public class BoxController {
     @GetMapping("/{id}")
     public BoxResponse getBox(@PathVariable Long id) {
         return boxService.getBoxById(id);
+    }
+
+    @PostMapping
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public void createBox(@RequestBody CreateBoxRequest request) {
+        boxService.createBox(request);
     }
 }
