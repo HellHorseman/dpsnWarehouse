@@ -13,4 +13,5 @@ public class BoxResponse {
     private Integer maxCells;
     // Список единиц, которые сейчас физически в ящике (по current_box_id)
     private List<UnitResponse> units;
+    private String name;
 }

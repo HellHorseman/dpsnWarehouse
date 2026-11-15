@@ -47,6 +47,7 @@ public class BoxServiceImpl implements BoxService {
             dto.setType(box.getType() != null ? box.getType().name() : "UNKNOWN");
             dto.setStatus(box.getStatus());
             dto.setMaxCells(box.getMaxCells());
+            dto.setName(box.getName());
             return dto;
         }).toList();
     }
@@ -61,6 +62,7 @@ public class BoxServiceImpl implements BoxService {
         dto.setType(box.getType() != null ? box.getType().name() : "UNKNOWN");
         dto.setStatus(box.getStatus());
         dto.setMaxCells(box.getMaxCells());
+        dto.setName(box.getName());
 
         // Находим все юниты, у которых current_box_id = id
         List<Unit> units = unitRepository.findAll().stream()
@@ -94,6 +96,7 @@ public class BoxServiceImpl implements BoxService {
         box.setMaxCells(request.getMaxCells());
         box.setStatus("on_stock");
         box.setCreatedAt(ZonedDateTime.now());
+        box.setName(request.getName());
 
         boxRepository.save(box);
     }

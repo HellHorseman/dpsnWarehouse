@@ -1,11 +1,8 @@
 package pro.dpsn.warehouse.service.impl;
 
 import lombok.RequiredArgsConstructor;
-import org.apache.poi.ss.usermodel.*;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.multipart.MultipartFile;
 import pro.dpsn.warehouse.dto.CreateInvoiceRequest;
 import pro.dpsn.warehouse.dto.ImportResult;
 import pro.dpsn.warehouse.dto.InvoiceResponse;
@@ -13,10 +10,7 @@ import pro.dpsn.warehouse.model.*;
 import pro.dpsn.warehouse.repo.*;
 import pro.dpsn.warehouse.service.InvoiceService;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.time.ZonedDateTime;
-import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -50,15 +44,12 @@ public class InvoiceServiceImpl implements InvoiceService {
             item.setQtyReturned(0);
             invoice.addItem(item);
         }
-
         return invoiceRepository.save(invoice);
     }
 
     @Override
     public InvoiceResponse getInvoiceById(Long id) {
-        Invoice invoice = invoiceRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Накладная не найдена"));
-
+        Invoice invoice = invoiceRepository.findById(id).orElseThrow(() -> new RuntimeException("Накладная не найдена"));
         InvoiceResponse resp = new InvoiceResponse();
         resp.setId(invoice.getId());
         resp.setCustomer(invoice.getCustomer());
@@ -74,36 +65,32 @@ public class InvoiceServiceImpl implements InvoiceService {
             dto.setQtyPlanned(item.getQtyPlanned());
             dto.setQtyShipped(item.getQtyShipped());
             dto.setQtyReturned(item.getQtyReturned());
+            dto.setBoxId(item.getBoxId());
 
-            // Для QR-оборудования
             if (item.getUnitId() != null) {
-                unitRepository.findById(item.getUnitId()).ifPresent(unit -> {
-                    dto.setUnitName(unit.getModel().getName() + " (" + unit.getSerialNumber() + ")");
-                });
+                unitRepository.findById(item.getUnitId()).ifPresent(u -> dto.setUnitName(u.getModel().getName() + " (" + u.getSerialNumber() + ")"));
             }
-
-            // ДЛЯ МЕЛКОГО ОБОРУДОВАНИЯ (вот этого не хватало!)
             if (item.getBulkItemId() != null) {
-                bulkItemRepository.findById(item.getBulkItemId()).ifPresent(bulk -> {
-                    dto.setBulkItemName(bulk.getName());
-                });
+                bulkItemRepository.findById(item.getBulkItemId()).ifPresent(b -> dto.setBulkItemName(b.getName()));
             }
-
+            if (item.getBoxId() != null) {
+                boxRepository.findById(item.getBoxId()).ifPresent(b -> dto.setBoxName(b.getName() != null ? b.getName() : b.getCode()));
+            }
             return dto;
         }).toList());
-
         return resp;
+    }
+
+    @Override
+    public List<InvoiceResponse> getAllInvoices() {
+        return invoiceRepository.findAllByOrderByIdDesc().stream().map(i -> getInvoiceById(i.getId())).toList();
     }
 
     @Override
     @Transactional
     public void shipInvoice(Long invoiceId, String shippedBy, String username) {
-        Invoice invoice = invoiceRepository.findById(invoiceId)
-                .orElseThrow(() -> new RuntimeException("Накладная не найдена"));
-
-        if (!"draft".equals(invoice.getStatus())) {
-            throw new RuntimeException("Накладную можно отгрузить только из статуса 'draft'");
-        }
+        Invoice invoice = invoiceRepository.findById(invoiceId).orElseThrow(() -> new RuntimeException("Накладная не найдена"));
+        if (!"draft".equals(invoice.getStatus())) throw new RuntimeException("Отгрузить можно только черновик");
 
         invoice.setStatus("shipped");
         invoice.setShippedBy(shippedBy);
@@ -112,43 +99,32 @@ public class InvoiceServiceImpl implements InvoiceService {
         invoice.setLockedAt(null);
 
         for (InvoiceItem item : invoice.getItems()) {
-            // 1. Обработка ЯЩИКА (независимо от содержимого)
+            // 1. ЯЩИК
             if (item.getBoxId() != null) {
-                Box box = boxRepository.findById(item.getBoxId())
-                        .orElseThrow(() -> new RuntimeException("Ящик не найден"));
+                Box box = boxRepository.findById(item.getBoxId()).orElseThrow(() -> new RuntimeException("Ящик не найден"));
+                if (!"on_stock".equals(box.getStatus())) throw new RuntimeException("Ящик " + box.getCode() + " недоступен (статус: " + box.getStatus() + ")");
 
-                if (!"on_stock".equals(box.getStatus())) {
-                    throw new RuntimeException("Ящик " + box.getCode() + " недоступен (статус: " + box.getStatus() + ")");
-                }
-
-                // Проверка лимита ячеек для сумок
-                if (box.getType() == BoxType.FIXED_BAG || box.getType() == BoxType.FIXED_BAG_OPTIONAL) {
+                // Проверка лимита для сумок (безопасная)
+                if (box.getMaxCells() != null && box.getMaxCells() > 0) {
                     long currentCount = unitRepository.countByCurrentBoxId(box.getId());
-                    if (currentCount >= box.getMaxCells()) {
-                        throw new RuntimeException("Сумка " + box.getCode() + " заполнена (максимум " + box.getMaxCells() + " ячеек)");
+                    long addingCount = invoice.getItems().stream().filter(i -> box.getId().equals(i.getBoxId()) && i.getUnitId() != null).count();
+                    if (currentCount + addingCount > box.getMaxCells()) {
+                        throw new RuntimeException("В сумке " + box.getCode() + " недостаточно места (максимум " + box.getMaxCells() + " ячеек)");
                     }
                 }
-
                 box.setStatus("in_transit");
                 boxRepository.save(box);
             }
 
-            // 2. Обработка ОБОРУДОВАНИЯ С QR (Unit)
+            // 2. ОБОРУДОВАНИЕ С QR
             if (item.getUnitId() != null) {
-                Unit unit = unitRepository.findById(item.getUnitId())
-                        .orElseThrow(() -> new RuntimeException("Оборудование не найдено"));
-
-                if (!"warehouse".equals(unit.getStatus())) {
-                    throw new RuntimeException("Оборудование " + unit.getSerialNumber() + " недоступно (статус: " + unit.getStatus() + ")");
-                }
+                Unit unit = unitRepository.findById(item.getUnitId()).orElseThrow(() -> new RuntimeException("Оборудование не найдено"));
+                if (!"warehouse".equals(unit.getStatus())) throw new RuntimeException("Оборудование " + unit.getSerialNumber() + " недоступно");
 
                 String oldStatus = unit.getStatus();
                 unit.setStatus("client");
                 unit.setUpdatedAt(ZonedDateTime.now());
-
-                if (item.getBoxId() != null) {
-                    unit.setCurrentBoxId(item.getBoxId());
-                }
+                if (item.getBoxId() != null) unit.setCurrentBoxId(item.getBoxId());
                 unitRepository.save(unit);
 
                 Movement movement = new Movement();
@@ -160,14 +136,10 @@ public class InvoiceServiceImpl implements InvoiceService {
                 movementRepository.save(movement);
             }
 
-            // 3. Обработка МЕЛКОГО ОБОРУДОВАНИЯ (BulkItem)
+            // 3. МЕЛКОЕ
             if (item.getBulkItemId() != null) {
-                BulkStock stock = bulkStockRepository.findById(item.getBulkItemId())
-                        .orElseThrow(() -> new RuntimeException("Мелкое оборудование не найдено"));
-
-                if (stock.getQtyOnHand() < item.getQtyPlanned()) {
-                    throw new RuntimeException("Недостаточно на складе: " + stock.getQtyOnHand() + " шт.");
-                }
+                BulkStock stock = bulkStockRepository.findById(item.getBulkItemId()).orElseThrow(() -> new RuntimeException("Мелкое оборудование не найдено"));
+                if (stock.getQtyOnHand() < item.getQtyPlanned()) throw new RuntimeException("Недостаточно на складе: " + stock.getQtyOnHand() + " шт.");
 
                 stock.setQtyOnHand(stock.getQtyOnHand() - item.getQtyPlanned());
                 bulkStockRepository.save(stock);
@@ -181,59 +153,41 @@ public class InvoiceServiceImpl implements InvoiceService {
                 movement.setComment("Отгрузка по накладной №" + invoice.getId());
                 movementRepository.save(movement);
             }
-
             item.setQtyShipped(item.getQtyPlanned());
         }
-
         invoiceRepository.save(invoice);
     }
 
     @Override
     @Transactional
     public void receiveInvoice(Long invoiceId, List<Long> receivedUnitIds, String username) {
-        Invoice invoice = invoiceRepository.findById(invoiceId)
-                .orElseThrow(() -> new RuntimeException("Накладная не найдена"));
-
-        if (!"shipped".equals(invoice.getStatus()) && !"partially_returned".equals(invoice.getStatus())) {
-            throw new RuntimeException("Приёмка возможна только для отгруженных накладных");
-        }
+        Invoice invoice = invoiceRepository.findById(invoiceId).orElseThrow(() -> new RuntimeException("Накладная не найдена"));
+        if (!"shipped".equals(invoice.getStatus()) && !"partially_returned".equals(invoice.getStatus())) throw new RuntimeException("Приёмка возможна только для отгруженных накладных");
 
         for (InvoiceItem item : invoice.getItems()) {
-            // 1. Обработка ОБОРУДОВАНИЯ С QR (Unit)
-            if (item.getUnitId() != null) {
-                if (receivedUnitIds.contains(item.getUnitId())) {
-                    if (item.getQtyReturned() > 0) {
-                        continue;
-                    }
+            if (item.getUnitId() != null && receivedUnitIds.contains(item.getUnitId())) {
+                if (item.getQtyReturned() > 0) continue;
+                Unit unit = unitRepository.findById(item.getUnitId()).orElseThrow(() -> new RuntimeException("Оборудование не найдено"));
+                String oldStatus = unit.getStatus();
+                unit.setStatus("warehouse");
+                unit.setCurrentBoxId(null);
+                unit.setUpdatedAt(ZonedDateTime.now());
+                unitRepository.save(unit);
 
-                    Unit unit = unitRepository.findById(item.getUnitId())
-                            .orElseThrow(() -> new RuntimeException("Оборудование не найдено"));
-
-                    String oldStatus = unit.getStatus();
-                    unit.setStatus("warehouse");
-                    unit.setCurrentBoxId(null);
-                    unit.setUpdatedAt(ZonedDateTime.now());
-                    unitRepository.save(unit);
-
-                    Movement movement = new Movement();
-                    movement.setUnitId(unit.getId());
-                    movement.setInvoiceId(invoice.getId());
-                    movement.setFromStatus(oldStatus);
-                    movement.setToStatus("warehouse");
-                    movement.setComment("Возврат по накладной №" + invoice.getId());
-                    movementRepository.save(movement);
-
-                    item.setQtyReturned(item.getQtyShipped());
-                }
+                Movement movement = new Movement();
+                movement.setUnitId(unit.getId());
+                movement.setInvoiceId(invoice.getId());
+                movement.setFromStatus(oldStatus);
+                movement.setToStatus("warehouse");
+                movement.setComment("Возврат по накладной №" + invoice.getId());
+                movementRepository.save(movement);
+                item.setQtyReturned(item.getQtyShipped());
             }
 
-            // 2. Обработка МЕЛКОГО ОБОРУДОВАНИЯ (BulkItem)
             if (item.getBulkItemId() != null) {
                 int returnQty = item.getQtyShipped() - item.getQtyReturned();
                 if (returnQty > 0) {
-                    BulkStock stock = bulkStockRepository.findById(item.getBulkItemId())
-                            .orElseThrow(() -> new RuntimeException("Мелкое оборудование не найдено"));
-
+                    BulkStock stock = bulkStockRepository.findById(item.getBulkItemId()).orElseThrow(() -> new RuntimeException("Мелкое оборудование не найдено"));
                     stock.setQtyOnHand(stock.getQtyOnHand() + returnQty);
                     bulkStockRepository.save(stock);
 
@@ -245,23 +199,14 @@ public class InvoiceServiceImpl implements InvoiceService {
                     movement.setQty(returnQty);
                     movement.setComment("Возврат по накладной №" + invoice.getId());
                     movementRepository.save(movement);
-
                     item.setQtyReturned(item.getQtyShipped());
                 }
             }
-
-            // 3. ЯЩИК НЕ ТРОГАЕМ — он принимается отдельно через BoxService.receiveBox()
         }
 
-        // Проверяем, всё ли вернули (только для QR-оборудования)
-        boolean allReturned = invoice.getItems().stream()
-                .allMatch(i -> i.getQtyReturned() >= i.getQtyShipped());
-
-        if (allReturned) {
-            invoice.setStatus("returned");
-        } else {
-            invoice.setStatus("partially_returned");
-        }
+        boolean allReturned = invoice.getItems().stream().allMatch(i -> i.getQtyReturned() >= i.getQtyShipped());
+        if (allReturned) invoice.setStatus("returned");
+        else invoice.setStatus("partially_returned");
 
         invoice.setUpdatedAt(ZonedDateTime.now());
         invoiceRepository.save(invoice);
@@ -273,12 +218,10 @@ public class InvoiceServiceImpl implements InvoiceService {
         Invoice invoice = invoiceRepository.findById(invoiceId)
                 .orElseThrow(() -> new RuntimeException("Накладная не найдена"));
 
-        // Удалять можно только из черновика
         if (!"draft".equals(invoice.getStatus())) {
-            throw new RuntimeException("Нельзя удалять позиции из отгруженной накладной");
+            throw new RuntimeException("Удалять позиции можно только из черновика");
         }
 
-        // Ищем строку и удаляем её
         boolean removed = invoice.getItems().removeIf(item -> item.getId().equals(itemId));
 
         if (!removed) {
@@ -286,120 +229,7 @@ public class InvoiceServiceImpl implements InvoiceService {
         }
 
         invoice.setUpdatedAt(ZonedDateTime.now());
-        invoiceRepository.save(invoice); // orphanRemoval = true удалит строку из БД
-    }
-
-    @Override
-    public byte[] exportInvoiceToExcel(Long invoiceId) {
-        Invoice invoice = invoiceRepository.findById(invoiceId)
-                .orElseThrow(() -> new RuntimeException("Накладная не найдена"));
-
-        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
-            Sheet sheet = workbook.createSheet("Накладная " + invoice.getId());
-
-            // Стили для заголовков
-            CellStyle headerStyle = workbook.createCellStyle();
-            Font headerFont = workbook.createFont();
-            headerFont.setBold(true);
-            headerStyle.setFont(headerFont);
-
-            // Заголовки
-            Row header = sheet.createRow(0);
-            String[] columns = {"ID", "Оборудование/Мелкое", "Кол-во план", "Кол-во отгружено", "Кол-во возвращено"};
-            for (int i = 0; i < columns.length; i++) {
-                Cell cell = header.createCell(i);
-                cell.setCellValue(columns[i]);
-                cell.setCellStyle(headerStyle);
-            }
-
-            // Данные
-            int rowNum = 1;
-            for (InvoiceItem item : invoice.getItems()) {
-                Row row = sheet.createRow(rowNum++);
-                row.createCell(0).setCellValue(item.getId());
-
-                String itemName = item.getUnitId() != null ? "Unit ID: " + item.getUnitId() : "Bulk ID: " + item.getBulkItemId();
-                row.createCell(1).setCellValue(itemName);
-                row.createCell(2).setCellValue(item.getQtyPlanned());
-                row.createCell(3).setCellValue(item.getQtyShipped());
-                row.createCell(4).setCellValue(item.getQtyReturned());
-            }
-
-            // Автоширина
-            for (int i = 0; i < columns.length; i++) {
-                sheet.autoSizeColumn(i);
-            }
-
-            ByteArrayOutputStream bos = new ByteArrayOutputStream();
-            workbook.write(bos);
-            return bos.toByteArray();
-
-        } catch (IOException e) {
-            throw new RuntimeException("Ошибка генерации Excel: " + e.getMessage());
-        }
-    }
-
-    @Override
-    @Transactional
-    public ImportResult importInvoiceFromExcel(MultipartFile file, String username) {
-        ImportResult result = new ImportResult();
-        List<CreateInvoiceRequest.ItemRequest> items = new ArrayList<>();
-
-        // Предполагаем, что в Excel есть колонки: Тип (UNIT/BULK), ID, Количество
-        try (Workbook workbook = new XSSFWorkbook(file.getInputStream())) {
-            Sheet sheet = workbook.getSheetAt(0);
-
-            // Пропускаем заголовок (строку 0)
-            for (int i = 1; i <= sheet.getLastRowNum(); i++) {
-                Row row = sheet.getRow(i);
-                if (row == null) continue;
-
-                try {
-                    String type = row.getCell(0).getStringCellValue(); // "UNIT" или "BULK"
-                    long id = (long) row.getCell(1).getNumericCellValue();
-                    int qty = (int) row.getCell(2).getNumericCellValue();
-
-                    CreateInvoiceRequest.ItemRequest item = new CreateInvoiceRequest.ItemRequest();
-                    if ("UNIT".equalsIgnoreCase(type)) {
-                        item.setUnitId(id);
-                    } else if ("BULK".equalsIgnoreCase(type)) {
-                        item.setBulkItemId(id);
-                    } else {
-                        result.getErrors().add("Строка " + (i + 1) + ": неизвестный тип " + type);
-                        continue;
-                    }
-                    item.setQtyPlanned(qty);
-                    items.add(item);
-                } catch (Exception e) {
-                    result.getErrors().add("Строка " + (i + 1) + ": ошибка парсинга (" + e.getMessage() + ")");
-                }
-            }
-        } catch (IOException e) {
-            throw new RuntimeException("Ошибка чтения файла: " + e.getMessage());
-        }
-
-        // Создаем накладную, если есть валидные строки
-        if (!items.isEmpty()) {
-            CreateInvoiceRequest request = new CreateInvoiceRequest();
-            request.setCustomer("Загружено из Excel");
-            request.setResponsible("Система");
-            request.setItems(items);
-
-            Invoice invoice = createInvoice(request, username);
-            result.setInvoiceId(invoice.getId());
-            result.setSuccessCount(items.size());
-        } else {
-            result.getErrors().add("Не найдено ни одной валидной строки для загрузки");
-        }
-
-        return result;
-    }
-
-    @Override
-    public List<InvoiceResponse> getAllInvoices() {
-        return invoiceRepository.findAllByOrderByIdDesc().stream()
-                .map(invoice -> getInvoiceById(invoice.getId())) // Переиспользуем маппинг
-                .toList();
+        invoiceRepository.save(invoice);
     }
 
     @Override
@@ -440,7 +270,6 @@ public class InvoiceServiceImpl implements InvoiceService {
                 .findFirst()
                 .orElseThrow(() -> new RuntimeException("Позиция не найдена"));
 
-        // Если это серийник, количество всегда 1 (пока не поддерживаем дробление)
         if (item.getUnitId() != null) {
             throw new RuntimeException("Нельзя изменить количество для серийного оборудования");
         }
@@ -448,5 +277,18 @@ public class InvoiceServiceImpl implements InvoiceService {
         item.setQtyPlanned(qty);
         invoice.setUpdatedAt(ZonedDateTime.now());
         invoiceRepository.save(invoice);
+    }
+
+    @Override
+    public byte[] exportInvoiceToExcel(Long invoiceId) {
+        // Заглушка, чтобы компилятор не ругался. Позже реализуем по-настоящему.
+        throw new RuntimeException("Экспорт в Excel пока не реализован");
+    }
+
+    @Override
+    @Transactional
+    public ImportResult importInvoiceFromExcel(org.springframework.web.multipart.MultipartFile file, String username) {
+        // Заглушка. Если нужно — реализуем по-настоящему.
+        throw new RuntimeException("Импорт из Excel пока не реализован");
     }
 }

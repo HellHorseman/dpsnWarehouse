@@ -20,8 +20,10 @@ public class InvoiceResponse {
         private String unitName;
         private Long bulkItemId;
         private String bulkItemName;
+        private Long boxId;        // <-- Добавили
+        private String boxName;    // <-- Добавили
         private Integer qtyPlanned;
         private Integer qtyShipped;
-        private Integer qtyReturned; // <-- Добавили это поле
+        private Integer qtyReturned;
     }
 }

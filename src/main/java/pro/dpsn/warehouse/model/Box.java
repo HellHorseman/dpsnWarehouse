@@ -32,4 +32,7 @@ public class Box {
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private ZonedDateTime createdAt = ZonedDateTime.now();
+
+    @Column(name = "name")
+    private String name;
 }
