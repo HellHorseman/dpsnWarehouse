@@ -90,4 +90,16 @@ public class InvoiceController {
     public void updateQty(@PathVariable Long invoiceId, @PathVariable Long itemId, @RequestParam Integer qty) {
         invoiceService.updateItemQty(invoiceId, itemId, qty);
     }
+
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STOREKEEPER')") // Разрешаем всем
+    public void deleteInvoice(@PathVariable Long id) {
+        invoiceService.deleteDraftInvoice(id);
+    }
+
+    @PatchMapping("/{invoiceId}/items/{itemId}/box")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STOREKEEPER')")
+    public void updateItemBox(@PathVariable Long invoiceId, @PathVariable Long itemId, @RequestParam(required = false) Long boxId) {
+        invoiceService.updateItemBox(invoiceId, itemId, boxId);
+    }
 }

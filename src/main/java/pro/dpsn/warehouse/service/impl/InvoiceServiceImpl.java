@@ -300,4 +300,44 @@ public class InvoiceServiceImpl implements InvoiceService {
         // Заглушка. Если нужно — реализуем по-настоящему.
         throw new RuntimeException("Импорт из Excel пока не реализован");
     }
+
+    @Override
+    @Transactional
+    public void deleteDraftInvoice(Long invoiceId) {
+        Invoice invoice = invoiceRepository.findById(invoiceId)
+                .orElseThrow(() -> new RuntimeException("Накладная не найдена"));
+        if (!"draft".equals(invoice.getStatus())) {
+            throw new RuntimeException("Удалять можно только черновики");
+        }
+        invoiceRepository.delete(invoice);
+    }
+
+    @Override
+    @Transactional
+    public void updateItemBox(Long invoiceId, Long itemId, Long boxId) {
+        Invoice invoice = invoiceRepository.findById(invoiceId)
+                .orElseThrow(() -> new RuntimeException("Накладная не найдена"));
+
+        if (!"draft".equals(invoice.getStatus())) {
+            throw new RuntimeException("Менять ящики можно только в черновике");
+        }
+
+        InvoiceItem item = invoice.getItems().stream()
+                .filter(i -> i.getId().equals(itemId))
+                .findFirst()
+                .orElseThrow(() -> new RuntimeException("Позиция не найдена"));
+
+        // Если ящик указан, проверяем, что он существует и свободен
+        if (boxId != null) {
+            Box box = boxRepository.findById(boxId)
+                    .orElseThrow(() -> new RuntimeException("Ящик не найден"));
+            if (!"on_stock".equals(box.getStatus())) {
+                throw new RuntimeException("Ящик " + box.getCode() + " недоступен (статус: " + box.getStatus() + ")");
+            }
+        }
+
+        item.setBoxId(boxId);
+        invoice.setUpdatedAt(ZonedDateTime.now());
+        invoiceRepository.save(invoice);
+    }
 }

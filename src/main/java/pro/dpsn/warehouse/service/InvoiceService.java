@@ -19,4 +19,6 @@ public interface InvoiceService {
     List<InvoiceResponse> getAllInvoices();
     void addItemToInvoice(Long invoiceId, CreateInvoiceRequest.ItemRequest itemRequest);
     void updateItemQty(Long invoiceId, Long itemId, Integer qty);
+    void deleteDraftInvoice(Long invoiceId);
+    void updateItemBox(Long invoiceId, Long itemId, Long boxId);
 }
