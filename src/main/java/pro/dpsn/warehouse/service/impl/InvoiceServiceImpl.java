@@ -98,13 +98,20 @@ public class InvoiceServiceImpl implements InvoiceService {
         invoice.setLockedBy(null);
         invoice.setLockedAt(null);
 
+        // Множество для отслеживания уже обработанных ящиков в этой накладной
+        java.util.Set<Long> processedBoxes = new java.util.HashSet<>();
+
         for (InvoiceItem item : invoice.getItems()) {
             // 1. ЯЩИК
-            if (item.getBoxId() != null) {
+            if (item.getBoxId() != null && !processedBoxes.contains(item.getBoxId())) {
                 Box box = boxRepository.findById(item.getBoxId()).orElseThrow(() -> new RuntimeException("Ящик не найден"));
-                if (!"on_stock".equals(box.getStatus())) throw new RuntimeException("Ящик " + box.getCode() + " недоступен (статус: " + box.getStatus() + ")");
 
-                // Проверка лимита для сумок (безопасная)
+                // Проверяем статус ТОЛЬКО при первом упоминании ящика
+                if (!"on_stock".equals(box.getStatus())) {
+                    throw new RuntimeException("Ящик " + box.getCode() + " недоступен (статус: " + box.getStatus() + ")");
+                }
+
+                // Проверка лимита для сумок
                 if (box.getMaxCells() != null && box.getMaxCells() > 0) {
                     long currentCount = unitRepository.countByCurrentBoxId(box.getId());
                     long addingCount = invoice.getItems().stream().filter(i -> box.getId().equals(i.getBoxId()) && i.getUnitId() != null).count();
@@ -112,11 +119,13 @@ public class InvoiceServiceImpl implements InvoiceService {
                         throw new RuntimeException("В сумке " + box.getCode() + " недостаточно места (максимум " + box.getMaxCells() + " ячеек)");
                     }
                 }
+
                 box.setStatus("in_transit");
                 boxRepository.save(box);
+                processedBoxes.add(box.getId()); // Запоминаем, что обработали
             }
 
-            // 2. ОБОРУДОВАНИЕ С QR
+            // 2. ОБОРУДОВАНИЕ С QR (без изменений)
             if (item.getUnitId() != null) {
                 Unit unit = unitRepository.findById(item.getUnitId()).orElseThrow(() -> new RuntimeException("Оборудование не найдено"));
                 if (!"warehouse".equals(unit.getStatus())) throw new RuntimeException("Оборудование " + unit.getSerialNumber() + " недоступно");
@@ -136,7 +145,7 @@ public class InvoiceServiceImpl implements InvoiceService {
                 movementRepository.save(movement);
             }
 
-            // 3. МЕЛКОЕ
+            // 3. МЕЛКОЕ (без изменений)
             if (item.getBulkItemId() != null) {
                 BulkStock stock = bulkStockRepository.findById(item.getBulkItemId()).orElseThrow(() -> new RuntimeException("Мелкое оборудование не найдено"));
                 if (stock.getQtyOnHand() < item.getQtyPlanned()) throw new RuntimeException("Недостаточно на складе: " + stock.getQtyOnHand() + " шт.");

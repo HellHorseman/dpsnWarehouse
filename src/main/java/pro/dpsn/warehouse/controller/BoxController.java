@@ -1,11 +1,16 @@
 package pro.dpsn.warehouse.controller;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import pro.dpsn.warehouse.dto.BoxResponse;
 import pro.dpsn.warehouse.dto.CreateBoxRequest;
+import pro.dpsn.warehouse.model.Box;
+import pro.dpsn.warehouse.repo.BoxRepository;
 import pro.dpsn.warehouse.service.BoxService;
+import pro.dpsn.warehouse.service.QrCodeService;
 
 import java.util.List;
 
@@ -15,6 +20,8 @@ import java.util.List;
 public class BoxController {
 
     private final BoxService boxService;
+    private final BoxRepository boxRepository;
+    private final QrCodeService qrCodeService;
 
     @PostMapping("/{id}/receive")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STOREKEEPER')")
@@ -37,5 +44,18 @@ public class BoxController {
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
     public void createBox(@RequestBody CreateBoxRequest request) {
         boxService.createBox(request);
+    }
+
+    @GetMapping("/{id}/qr")
+    public ResponseEntity<byte[]> getBoxQr(@PathVariable Long id) {
+        Box box = boxRepository.findById(id).orElseThrow(() -> new RuntimeException("Ящик не найден"));
+        try {
+            byte[] qr = qrCodeService.generateQrCode(box.getQrCode(), 250, 250);
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_TYPE, "image/png")
+                    .body(qr);
+        } catch (Exception e) {
+            throw new RuntimeException("Ошибка генерации QR");
+        }
     }
 }
