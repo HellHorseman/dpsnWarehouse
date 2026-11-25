@@ -44,10 +44,8 @@ public class InvoiceController {
 
     @PostMapping("/{id}/receive")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STOREKEEPER')")
-    public void receiveInvoice(@PathVariable Long id,
-                               @RequestBody ReceiveInvoiceRequest request,
-                               Authentication authentication) {
-        invoiceService.receiveInvoice(id, request.getUnitIds(), authentication.getName());
+    public void receiveInvoice(@PathVariable Long id, @RequestBody ReceiveInvoiceRequest request, Authentication authentication) {
+        invoiceService.receiveInvoice(id, request, authentication.getName());
     }
 
     @DeleteMapping("/{invoiceId}/items/{itemId}")

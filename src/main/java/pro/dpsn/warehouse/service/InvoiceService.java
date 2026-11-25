@@ -4,6 +4,7 @@ import org.springframework.web.multipart.MultipartFile;
 import pro.dpsn.warehouse.dto.CreateInvoiceRequest;
 import pro.dpsn.warehouse.dto.ImportResult;
 import pro.dpsn.warehouse.dto.InvoiceResponse;
+import pro.dpsn.warehouse.dto.ReceiveInvoiceRequest;
 import pro.dpsn.warehouse.model.Invoice;
 
 import java.util.List;
@@ -12,7 +13,7 @@ public interface InvoiceService {
     Invoice createInvoice(CreateInvoiceRequest request, String username);
     InvoiceResponse getInvoiceById(Long id);
     void shipInvoice(Long invoiceId, String username);
-    void receiveInvoice(Long invoiceId, List<Long> receivedUnitIds, String username);
+    void receiveInvoice(Long invoiceId, ReceiveInvoiceRequest request, String username);
     void removeItemFromInvoice(Long invoiceId, Long itemId);
     byte[] exportInvoiceToExcel(Long invoiceId);
     ImportResult importInvoiceFromExcel(MultipartFile file, String username);

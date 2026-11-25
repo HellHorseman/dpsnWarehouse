@@ -37,4 +37,7 @@ public class Unit {
 
     @Column(name = "updated_at", nullable = false)
     private ZonedDateTime updatedAt = ZonedDateTime.now();
+
+    @Column(name = "needs_new_qr")
+    private Boolean needsNewQr = false;
 }

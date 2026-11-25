@@ -9,4 +9,5 @@ public class UnitResponse {
     private String qrCode;
     private String status;
     private String modelName; // Вместо всего объекта Model отдаем только имя
+    private Boolean needsNewQr;
 }
