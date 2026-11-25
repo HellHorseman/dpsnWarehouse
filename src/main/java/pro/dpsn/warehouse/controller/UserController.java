@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import pro.dpsn.warehouse.dto.CreateUserRequest;
+import pro.dpsn.warehouse.dto.UpdateUserRequest;
 import pro.dpsn.warehouse.model.User;
 import pro.dpsn.warehouse.service.UserService;
 
@@ -26,5 +27,11 @@ public class UserController {
     @PreAuthorize("hasRole('ADMIN')")
     public List<User> getAllUsers() {
         return userService.getAllUsers();
+    }
+
+    @PutMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public void updateUser(@PathVariable Long id, @RequestBody UpdateUserRequest request) {
+        userService.updateUser(id, request);
     }
 }
