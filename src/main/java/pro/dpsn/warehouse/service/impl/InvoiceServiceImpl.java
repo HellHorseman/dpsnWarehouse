@@ -23,13 +23,21 @@ public class InvoiceServiceImpl implements InvoiceService {
     private final BulkStockRepository bulkStockRepository;
     private final BoxRepository boxRepository;
     private final BulkItemRepository bulkItemRepository;
+    private final UserRepository userRepository;
 
     @Override
     @Transactional
     public Invoice createInvoice(CreateInvoiceRequest request, String username) {
         Invoice invoice = new Invoice();
         invoice.setCustomer(request.getCustomer());
-        invoice.setResponsible(request.getResponsible());
+
+        // Ищем пользователя по телефону и берем его ФИО
+        User creator = userRepository.findByPhone(username).orElse(null);
+        String creatorName = (creator != null) ? creator.getFullName() : username;
+
+        invoice.setResponsible(request.getResponsible() != null ? request.getResponsible() : creatorName);
+        invoice.setCreatorName(creatorName); // <-- Сохраняем имя в новое поле
+
         invoice.setStatus("draft");
         invoice.setCreatedAt(ZonedDateTime.now());
         invoice.setUpdatedAt(ZonedDateTime.now());
@@ -56,6 +64,8 @@ public class InvoiceServiceImpl implements InvoiceService {
         resp.setResponsible(invoice.getResponsible());
         resp.setStatus(invoice.getStatus());
         resp.setCreatedAt(invoice.getCreatedAt());
+        resp.setShippedBy(invoice.getShippedBy());
+        resp.setCreatorName(invoice.getCreatorName());
 
         resp.setItems(invoice.getItems().stream().map(item -> {
             InvoiceResponse.ItemDto dto = new InvoiceResponse.ItemDto();
@@ -88,12 +98,15 @@ public class InvoiceServiceImpl implements InvoiceService {
 
     @Override
     @Transactional
-    public void shipInvoice(Long invoiceId, String shippedBy, String username) {
+    public void shipInvoice(Long invoiceId, String username) {
         Invoice invoice = invoiceRepository.findById(invoiceId).orElseThrow(() -> new RuntimeException("Накладная не найдена"));
         if (!"draft".equals(invoice.getStatus())) throw new RuntimeException("Отгрузить можно только черновик");
 
+        User shipper = userRepository.findByPhone(username).orElse(null);
+        String shipperName = (shipper != null) ? shipper.getFullName() : username;
+
         invoice.setStatus("shipped");
-        invoice.setShippedBy(shippedBy);
+        invoice.setShippedBy(shipperName);
         invoice.setUpdatedAt(ZonedDateTime.now());
         invoice.setLockedBy(null);
         invoice.setLockedAt(null);

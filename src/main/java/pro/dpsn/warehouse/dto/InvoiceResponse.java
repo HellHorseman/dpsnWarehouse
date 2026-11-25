@@ -11,6 +11,8 @@ public class InvoiceResponse {
     private String responsible;
     private String status;
     private ZonedDateTime createdAt;
+    private String shippedBy;
+    private String creatorName;
     private List<ItemDto> items;
 
     @Data

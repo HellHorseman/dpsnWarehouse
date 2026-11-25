@@ -39,7 +39,7 @@ public class InvoiceController {
     public void shipInvoice(@PathVariable Long id,
                             @RequestBody ShipInvoiceRequest request,
                             Authentication authentication) {
-        invoiceService.shipInvoice(id, request.getShippedBy(), authentication.getName());
+        invoiceService.shipInvoice(id, authentication.getName());
     }
 
     @PostMapping("/{id}/receive")

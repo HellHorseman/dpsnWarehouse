@@ -11,7 +11,7 @@ import java.util.List;
 public interface InvoiceService {
     Invoice createInvoice(CreateInvoiceRequest request, String username);
     InvoiceResponse getInvoiceById(Long id);
-    void shipInvoice(Long invoiceId, String shippedBy, String username);
+    void shipInvoice(Long invoiceId, String username);
     void receiveInvoice(Long invoiceId, List<Long> receivedUnitIds, String username);
     void removeItemFromInvoice(Long invoiceId, Long itemId);
     byte[] exportInvoiceToExcel(Long invoiceId);

@@ -36,6 +36,9 @@ public class Invoice {
 
     private Integer version = 0;
 
+    @Column(name = "creator_name")
+    private String creatorName;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private ZonedDateTime createdAt = ZonedDateTime.now();
 
