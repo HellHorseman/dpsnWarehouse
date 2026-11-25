@@ -47,15 +47,17 @@ public class BoxController {
     }
 
     @GetMapping("/{id}/qr")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
     public ResponseEntity<byte[]> getBoxQr(@PathVariable Long id) {
-        Box box = boxRepository.findById(id).orElseThrow(() -> new RuntimeException("Ящик не найден"));
+        Box box = boxRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Ящик не найден"));
         try {
-            byte[] qr = qrCodeService.generateQrCode(box.getQrCode(), 250, 250);
+            byte[] qrImage = qrCodeService.generateQrCode(box.getQrCode(), 300, 300);
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_TYPE, "image/png")
-                    .body(qr);
+                    .body(qrImage);
         } catch (Exception e) {
-            throw new RuntimeException("Ошибка генерации QR");
+            throw new RuntimeException("Ошибка генерации QR: " + e.getMessage());
         }
     }
 }
