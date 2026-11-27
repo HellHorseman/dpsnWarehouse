@@ -6,6 +6,7 @@ import pro.dpsn.warehouse.dto.ImportResult;
 import pro.dpsn.warehouse.dto.InvoiceResponse;
 import pro.dpsn.warehouse.dto.ReceiveInvoiceRequest;
 import pro.dpsn.warehouse.model.Invoice;
+import pro.dpsn.warehouse.model.InvoiceItem;
 
 import java.util.List;
 
@@ -22,4 +23,5 @@ public interface InvoiceService {
     void updateItemQty(Long invoiceId, Long itemId, Integer qty);
     void deleteDraftInvoice(Long invoiceId);
     void updateItemBox(Long invoiceId, Long itemId, Long boxId);
+    InvoiceItem scanItemInInvoice(Long invoiceId, String qrCode);
 }

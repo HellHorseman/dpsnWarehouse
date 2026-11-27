@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import pro.dpsn.warehouse.dto.*;
 import pro.dpsn.warehouse.model.Invoice;
+import pro.dpsn.warehouse.model.InvoiceItem;
 import pro.dpsn.warehouse.service.InvoiceService;
 
 import java.util.List;
@@ -99,5 +100,11 @@ public class InvoiceController {
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STOREKEEPER')")
     public void updateItemBox(@PathVariable Long invoiceId, @PathVariable Long itemId, @RequestParam(required = false) Long boxId) {
         invoiceService.updateItemBox(invoiceId, itemId, boxId);
+    }
+
+    @GetMapping("/{id}/scan")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'STOREKEEPER')")
+    public InvoiceItem scanItem(@PathVariable Long id, @RequestParam String qrCode) {
+        return invoiceService.scanItemInInvoice(id, qrCode);
     }
 }

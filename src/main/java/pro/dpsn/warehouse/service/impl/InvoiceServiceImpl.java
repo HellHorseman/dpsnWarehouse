@@ -390,4 +390,19 @@ public class InvoiceServiceImpl implements InvoiceService {
         invoice.setUpdatedAt(ZonedDateTime.now());
         invoiceRepository.save(invoice);
     }
+
+    @Override
+    public InvoiceItem scanItemInInvoice(Long invoiceId, String qrCode) {
+        Invoice invoice = invoiceRepository.findById(invoiceId)
+                .orElseThrow(() -> new RuntimeException("Накладная не найдена"));
+
+        Unit unit = unitRepository.findByQrCode(qrCode)
+                .orElseThrow(() -> new RuntimeException("Оборудование с таким QR не найдено"));
+
+        // Ищем этот юнит в накладной
+        return invoice.getItems().stream()
+                .filter(item -> unit.getId().equals(item.getUnitId()))
+                .findFirst()
+                .orElseThrow(() -> new RuntimeException("Этого оборудования нет в выбранной накладной"));
+    }
 }
