@@ -48,16 +48,20 @@ public class BoxController {
 
     @GetMapping("/{id}/qr")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
-    public ResponseEntity<byte[]> getBoxQr(@PathVariable Long id) {
+    public ResponseEntity<byte[]> getUnitQr(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "300") int width,
+            @RequestParam(defaultValue = "300") int height) {
         Box box = boxRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Ящик не найден"));
+                .orElseThrow(() -> new RuntimeException("Оборудование не найдено"));
         try {
-            byte[] qrImage = qrCodeService.generateQrCode(box.getQrCode(), 300, 300);
+            // Генерируем QR нужного размера (в пикселях)
+            byte[] qrImage = qrCodeService.generateQrCode(box.getQrCode(), width, height);
             return ResponseEntity.ok()
                     .header(HttpHeaders.CONTENT_TYPE, "image/png")
                     .body(qrImage);
         } catch (Exception e) {
-            throw new RuntimeException("Ошибка генерации QR: " + e.getMessage());
+            throw new RuntimeException("Ошибка генерации QR");
         }
     }
 }
